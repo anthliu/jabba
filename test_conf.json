@@ -1,15 +1,17 @@
 {
     "@global": {
+        "@log_path": "logs/@run.log",
         "@format": "=",
-        "@prefix": "PREFIX",
         "@env.CUDA_VISIBLE_DEVICES": "1",
         "@program": "python test_job.py",
+        "@prefix": "PREFIX",
         "global.arg": "testval",
         "global.arg2": "testval2"
     },
     "@jobs": [{
         "@load": 0.5,
-        "run": "@prefix-low-prior-med-load"
+        "run": "@prefix-low-prior-med-load",
+        "arg": "refer-any-var-@load"
     }, {
         "@load": 0.2,
         "run": "@prefix-low-prior-low-load1"

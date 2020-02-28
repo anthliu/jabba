@@ -4,15 +4,17 @@ from datetime import datetime
 import asyncio
 import argparse
 import json
+import itertools
+import collections
 
-#SPECIAL_ARGS = [
-#    '@format',
-#    '@prefix',
-#    '@env',
-#    '@program',
-#    '@load',
-#    '@priority'
-#]
+Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config_str'])
+
+def dict_product(d):
+    keys = d.keys()
+    yield from (
+        dict(zip(keys, result))
+        for result in itertools.product(*[d[key] for key in keys])
+    )
 
 async def job(**kwargs):
     gpus = kwargs.pop('gpu', None)
@@ -43,36 +45,60 @@ def parse_jobs(cfg, overrides):
         job_cfg_ = dict(global_cfg)
         job_cfg_.update(local_cfg)
         job_cfg_.update(overrides)
-        
-        job_cfg = dict(job_cfg_)# save job_cfg_ for later
-        assert '@program' in job_cfg
-        cmd = job_cfg.pop('@program')
-        if '@format' in job_cfg:
-            flag_format = job_cfg.pop('@format')
-        else:
-            flag_format = 'flag'
-        prefix = job_cfg.pop('@prefix', '')
-        load = job_cfg.pop('@load', 1)
-        priority = job_cfg.pop('@priority', 0)
 
-        for flag, value in job_cfg.items():
-            if isinstance(value, str):
-                value = value.replace('@prefix', prefix)
-            if flag[0] == '@':
-                if flag.startswith('@env'):
-                    flag = flag.split('.')[1]
-                    cmd = f'{flag}={value} {cmd}'
+        # Calculate sweep flags
+        sweep_flags = {}
+        for flag, value in job_cfg_.items():
+            if flag.startswith('@sweep'):
+                _, sweep_flag = flag.split('.')
+                sweep_flags[sweep_flag] = value
+                job_cfg_.pop(flag)
+
+        for sweep in dict_product(sweep_flags):
+            job_cfg_.update(sweep)
+            job_cfg = dict(job_cfg_)# save job_cfg_ for later
+
+            # create string formatter
+            name_lookup = {}
+            for flag, value in job_cfg_.items():
+                if flag[0] == '@':
+                    flag_parts = flag[1:].split('.')
+                    name = flag_parts[0]
                 else:
-                    raise Exception(f'Unknown special flag: {flag}')
+                    name = flag
+                name_lookup[name] = value
+            def formatter(value):
+                if isinstance(value, str):
+                    for name, val in name_lookup.items():
+                        value = value.replace('@' + name, str(val))
+                return value
+
+            # parse magic commands
+            assert '@program' in job_cfg
+            cmd = job_cfg.pop('@program')
+            if '@format' in job_cfg:
+                flag_format = job_cfg.pop('@format')
             else:
-                if flag_format == 'flag':
-                    cmd += f' --{flag} {value}'
-                elif flag_format == '=':
-                    cmd += f' {flag}={value}'
-                else:
-                    raise Exception(f'Unknown flag_format: {flag_format}.')
+                flag_format = 'flag'
+            load = job_cfg.pop('@load', 1)
+            priority = job_cfg.pop('@priority', 0)
+            log_path = job_cfg.pop('@log_path', datetime.now().strftime('%Y-%m-%d-%H-%M-%S.log'))
 
-        jobs.append((-priority, load, cmd, json.dumps(job_cfg_)))
+            for flag, value in job_cfg.items():
+                value = formatter(value)
+                if flag[0] == '@':
+                    if flag.startswith('@env'):
+                        flag = flag.split('.')[1]
+                        cmd = f'{flag}={value} {cmd}'
+                else:
+                    if flag_format == 'flag':
+                        cmd += f' --{flag} {value}'
+                    elif flag_format == '=':
+                        cmd += f' {flag}={value}'
+                    else:
+                        raise Exception(f'Unknown flag_format: {flag_format}.')
+
+            jobs.append(Job(-priority, load, cmd, log_path, json.dumps(job_cfg_)))
 
     return jobs
 
