@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+
+from datetime import datetime
+import asyncio
+import argparse
+import json
+
+#SPECIAL_ARGS = [
+#    '$format',
+#    '$prefix',
+#    '$env',
+#    '$program',
+#    '$load',
+#    '$priority'
+#]
+
+async def job(**kwargs):
+    gpus = kwargs.pop('gpu', None)
+    cmd = ' '.join(f'{flag}={value}' for flag, value in kwargs.items())
+    cmd = 'python il_test.py hydra.verbose=__main__ ' + cmd
+    if gpus is not None:
+        cmd = 'CUDA_VISIBLE_DEVICES=' + ','.join(str(gpu) for gpu in gpus) + ' ' + cmd
+    cur_time = datetime.now().strftime("%Y-%m-%d (%H:%M:%S)")
+    print(f'[{cur_time}] Running process "{cmd}"')
+    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.STDOUT)
+    result = await proc.wait()
+    cur_time = datetime.now().strftime("%Y-%m-%d (%H:%M:%S)")
+    if result != 0:
+        print(f'[{cur_time}] Process "{cmd}" terminated with ERROR code {result}')
+    else:
+        print(f'[{cur_time}] Process finished "{cmd}"')
+    return result
+
+async def job_sequence(*kwarg_list):
+    for kwarg in kwarg_list:
+        result = await job(**kwarg)
+
+def parse_jobs(cfg):
+    jobs = []
+    global_cfg = cfg.get('$global', {})
+
+    for local_cfg in cfg['$jobs']:
+        job_cfg_ = dict(global_cfg)
+        job_cfg_.update(local_cfg)
+        
+        job_cfg = dict(job_cfg_)# save job_cfg_ for later
+        assert '$program' in job_cfg
+        cmd = job_cfg.pop('$program')
+        if '$format' in job_cfg:
+            flag_format = job_cfg.pop('$format')
+        else:
+            flag_format = 'flag'
+        prefix = job_cfg.pop('$prefix', '')
+        load = job_cfg.pop('$load', 1)
+        priority = job_cfg.pop('$priority', 0)
+
+        for flag, value in job_cfg.items():
+            if isinstance(value, str):
+                value = value.replace('$prefix', prefix)
+            if flag[0] == '$':
+                if flag.startswith('$env'):
+                    flag = flag.split('.')[1]
+                    cmd = f'{flag}={value} {cmd}'
+                else:
+                    raise Exception(f'Unknown special flag: {flag}')
+            else:
+                if flag_format == 'flag':
+                    cmd += f' --{flag} {value}'
+                elif flag_format == '=':
+                    cmd += f' {flag}={value}'
+                else:
+                    raise Exception(f'Unknown flag_format: {flag_format}.')
+
+        jobs.append((-priority, load, cmd, json.dumps(job_cfg_)))
+
+    return jobs
+
+async def main(args):
+    jobs = []
+    for config_path in args.config_paths:
+        with open(config_path) as f:
+            cfg = json.load(f)
+        jobs.extend(parse_jobs(cfg))
+    jobs = sorted(jobs)
+    for job in jobs:
+        print(job)
+    assert False
+
+    tasks = []
+    for i, local_args in enumerate(JOBS):
+        #gpu = GPUS[i % len(GPUS)]
+        gpu = GPUS
+        job_args = dict(GLOBAL_CONFIGS)
+        job_args.update(local_args)
+        #tasks.append(asyncio.create_task(job(gpu=gpu, **job_args)))
+        await job(gpu=gpu, **job_args)
+
+    #return await asyncio.gather(*tasks)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Run jobs in sequence and in parallel',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('config_paths', nargs='+', help='Config files to run (json)')
+    args, overrides = parser.parse_known_args()
+    asyncio.run(main(args))
