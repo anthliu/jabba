@@ -6,12 +6,12 @@ import argparse
 import json
 
 #SPECIAL_ARGS = [
-#    '$format',
-#    '$prefix',
-#    '$env',
-#    '$program',
-#    '$load',
-#    '$priority'
+#    '@format',
+#    '@prefix',
+#    '@env',
+#    '@program',
+#    '@load',
+#    '@priority'
 #]
 
 async def job(**kwargs):
@@ -35,30 +35,31 @@ async def job_sequence(*kwarg_list):
     for kwarg in kwarg_list:
         result = await job(**kwarg)
 
-def parse_jobs(cfg):
+def parse_jobs(cfg, overrides):
     jobs = []
-    global_cfg = cfg.get('$global', {})
+    global_cfg = cfg.get('@global', {})
 
-    for local_cfg in cfg['$jobs']:
+    for local_cfg in cfg['@jobs']:
         job_cfg_ = dict(global_cfg)
         job_cfg_.update(local_cfg)
+        job_cfg_.update(overrides)
         
         job_cfg = dict(job_cfg_)# save job_cfg_ for later
-        assert '$program' in job_cfg
-        cmd = job_cfg.pop('$program')
-        if '$format' in job_cfg:
-            flag_format = job_cfg.pop('$format')
+        assert '@program' in job_cfg
+        cmd = job_cfg.pop('@program')
+        if '@format' in job_cfg:
+            flag_format = job_cfg.pop('@format')
         else:
             flag_format = 'flag'
-        prefix = job_cfg.pop('$prefix', '')
-        load = job_cfg.pop('$load', 1)
-        priority = job_cfg.pop('$priority', 0)
+        prefix = job_cfg.pop('@prefix', '')
+        load = job_cfg.pop('@load', 1)
+        priority = job_cfg.pop('@priority', 0)
 
         for flag, value in job_cfg.items():
             if isinstance(value, str):
-                value = value.replace('$prefix', prefix)
-            if flag[0] == '$':
-                if flag.startswith('$env'):
+                value = value.replace('@prefix', prefix)
+            if flag[0] == '@':
+                if flag.startswith('@env'):
                     flag = flag.split('.')[1]
                     cmd = f'{flag}={value} {cmd}'
                 else:
@@ -75,12 +76,12 @@ def parse_jobs(cfg):
 
     return jobs
 
-async def main(args):
+async def main(args, overrides):
     jobs = []
     for config_path in args.config_paths:
         with open(config_path) as f:
             cfg = json.load(f)
-        jobs.extend(parse_jobs(cfg))
+        jobs.extend(parse_jobs(cfg, overrides))
     jobs = sorted(jobs)
     for job in jobs:
         print(job)
@@ -103,5 +104,11 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument('config_paths', nargs='+', help='Config files to run (json)')
-    args, overrides = parser.parse_known_args()
-    asyncio.run(main(args))
+    parser.add_argument('-x', '--overrides', nargs='+', help='Parameters to override from the config')
+    args = parser.parse_args()
+    overrides = {}
+    if args.overrides is not None:
+        for override in args.overrides:
+            flag, value = override.split('=')
+            overrides[flag] = value
+    asyncio.run(main(args, overrides))

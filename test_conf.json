@@ -1,28 +1,28 @@
 {
-    "$global": {
-        "$format": "=",
-        "$prefix": "PREFIX",
-        "$env.CUDA_VISIBLE_DEVICES": "1",
-        "$program": "python test_job.py",
+    "@global": {
+        "@format": "=",
+        "@prefix": "PREFIX",
+        "@env.CUDA_VISIBLE_DEVICES": "1",
+        "@program": "python test_job.py",
         "global.arg": "testval",
         "global.arg2": "testval2"
     },
-    "$jobs": [{
-        "$load": 0.5,
-        "run": "$prefix-low-prior-med-load"
+    "@jobs": [{
+        "@load": 0.5,
+        "run": "@prefix-low-prior-med-load"
     }, {
-        "$load": 0.2,
-        "run": "$prefix-low-prior-low-load1"
+        "@load": 0.2,
+        "run": "@prefix-low-prior-low-load1"
     }, {
-        "$load": 0.2,
-        "run": "$prefix-low-prior-low-load2"
+        "@load": 0.2,
+        "run": "@prefix-low-prior-low-load2"
     }, {
-        "$load": 0.2,
-        "run": "$prefix-low-prior-low-load3"
+        "@load": 0.2,
+        "run": "@prefix-low-prior-low-load3"
     }, {
-        "$priority": 3,
-        "$load": 1,
-        "run": "$prefix-high-priority-big-load",
+        "@priority": 3,
+        "@load": 1,
+        "run": "@prefix-high-priority-big-load",
         "global.arg2": "overrided"
     }]
 }
