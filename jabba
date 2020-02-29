@@ -135,7 +135,7 @@ class JobQ(object):
                 while self.cur_load + job.load > self.max_load:
                     await self.load_free_cv.wait()
 
-            self.cur_load += job.load
+            self.cur_load += job.load - 1e-3# floating point errors lol
             job_tasks.append(asyncio.create_task(self.run_job(job)))
         return await asyncio.gather(*job_tasks)
 

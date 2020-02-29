@@ -17,6 +17,9 @@
         "@sweep.number": [0, 1, 2],
         "run": "@prefix-low-prior-low-load-@number"
     }, {
+        "@sweep.number": ["one", "two"],
+        "run": "@prefix-fail-@number"
+    }, {
         "@priority": 3,
         "@load": 1,
         "run": "@prefix-high-priority-big-load",
