@@ -7,6 +7,7 @@ import json
 import itertools
 import collections
 import heapq
+from pathlib import Path
 
 Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config_str'])
 
@@ -100,40 +101,40 @@ class JobQ(object):
         self.failed_jobs = []
         heapq.heapify(self.jobs)
 
-        self.load_free_cv = asyncio.Condition()
-
     def push(self, job):
         heapq.heappush(self.jobs, ((-job.priority, job.load), job))
 
     async def run_job(self, job):
-        async with self.load_free_cv:
-            assert self.cur_load <= self.max_load
+        assert self.cur_load <= self.max_load
 
         start_time = datetime.now()
         start_time_s = start_time.strftime("%Y-%m-%d (%H:%M:%S)")
         print(f'[{start_time_s}] Running process "{job.command}"')
-        proc = await asyncio.create_subprocess_shell(job.command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.STDOUT)
+        with open(job.log_path, 'w') as f:
+            proc = await asyncio.create_subprocess_shell(job.command, stdout=f, stderr=asyncio.subprocess.PIPE)
         result = await proc.wait()
         end_time = datetime.now()
         end_time_s = end_time.strftime("%Y-%m-%d (%H:%M:%S)")
         if result != 0:
             self.failed_jobs.append(job)
+            stderr = await proc.stderr.read()
             print(f'[{end_time_s}] Process "{job.command}" terminated with ERROR code {result}. Finished in {end_time - start_time}')
+            print(stderr.decode('utf-8'))
         else:
             print(f'[{end_time_s}] Process finished "{job.command}". Finished in {end_time - start_time}')
 
-        async with self.load_free_cv:
-            self.cur_load -= job.load
-            self.load_free_cv.notify()
+        self.cur_load -= job.load
         return result
 
     async def empty(self):
         job_tasks = []
+
         while len(self.jobs) > 0:
             _, job = heapq.heappop(self.jobs)
-            async with self.load_free_cv:
-                while self.cur_load + job.load > self.max_load:
-                    await self.load_free_cv.wait()
+            while self.cur_load + job.load > self.max_load:
+                assert len(job_tasks) > 0
+                past_task = job_tasks.pop(0)
+                await past_task
 
             self.cur_load += job.load - 1e-3# floating point errors lol
             job_tasks.append(asyncio.create_task(self.run_job(job)))
@@ -161,4 +162,5 @@ if __name__ == '__main__':
         for override in args.overrides:
             flag, value = override.split('=')
             overrides[flag] = value
+
     asyncio.run(main(args, overrides))
