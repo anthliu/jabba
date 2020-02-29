@@ -31,7 +31,7 @@ def parse_jobs(cfg, overrides):
         sweep_flags = {}
         for flag, value in job_cfg_.items():
             if flag.startswith('@sweep'):
-                _, sweep_flag = flag.split('.')
+                _, sweep_flag = flag.split('.', 1)
                 sweep_flags[sweep_flag] = value
         for sweep_flag in sweep_flags.keys():
             job_cfg_.pop('@sweep.' + sweep_flag)
@@ -78,7 +78,7 @@ def parse_jobs(cfg, overrides):
             for flag, value in job_cfg.items():
                 if flag[0] == '@':
                     if flag.startswith('@env'):
-                        flag = flag.split('.')[1]
+                        flag = flag.split('.', 1)[1]
                         cmd = f'{flag}={value} {cmd}'
                 else:
                     if flag_format == 'flag':
@@ -160,7 +160,7 @@ if __name__ == '__main__':
     overrides = {}
     if args.overrides is not None:
         for override in args.overrides:
-            flag, value = override.split('=')
+            flag, value = override.split('=', 1)
             overrides[flag] = value
 
     asyncio.run(main(args, overrides))
