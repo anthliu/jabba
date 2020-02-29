@@ -9,7 +9,7 @@ import collections
 import heapq
 from pathlib import Path
 
-Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config_str'])
+Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config'])
 
 def dict_product(d):
     keys = d.keys()
@@ -88,17 +88,18 @@ def parse_jobs(cfg, overrides):
                     else:
                         raise Exception(f'Unknown flag_format: {flag_format}.')
 
-            jobs.append(Job(priority, load, cmd, log_path, json.dumps(job_cfg_)))
+            jobs.append(Job(priority, load, cmd, log_path, job_cfg_))
 
     return jobs
 
 class JobQ(object):
-    def __init__(self, jobs=[]):
+    def __init__(self, jobs=[], dry_run=False):
         self.cur_load = 0
         self.max_load = 1
 
         self.jobs = [((-job.priority, job.load), job) for job in jobs]
         self.failed_jobs = []
+        self.dry_run = dry_run
         heapq.heapify(self.jobs)
 
     def push(self, job):
@@ -106,6 +107,10 @@ class JobQ(object):
 
     async def run_job(self, job):
         assert self.cur_load <= self.max_load
+        if self.dry_run:
+            print(f'Test running process "{job.command}".')
+            self.cur_load -= job.load
+            return 0
 
         start_time = datetime.now()
         start_time_s = start_time.strftime("%Y-%m-%d (%H:%M:%S)")
@@ -146,8 +151,13 @@ async def main(args, overrides):
         with open(config_path) as f:
             cfg = json.load(f)
         jobs.extend(parse_jobs(cfg, overrides))
-    jobq = JobQ(jobs)
+    jobq = JobQ(jobs, dry_run=args.dry_run)
     await jobq.empty()
+    if len(jobq.failed_jobs) > 0:
+        failed_cfg = {'@jobs': [job.config for job in jobq.failed_jobs]}
+        failed_path = datetime.now().strftime('failed-%Y-%m-%d-%H-%M-%S.json')
+        with open(failed_path, 'w') as f:
+            json.dump(failed_cfg, f, indent=4)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -156,6 +166,7 @@ if __name__ == '__main__':
     )
     parser.add_argument('config_paths', nargs='+', help='Config files to run (json)')
     parser.add_argument('-x', '--overrides', nargs='+', help='Parameters to override from the config')
+    parser.add_argument('--dry_run', action='store_true', help='Run through config without running commands')
     args = parser.parse_args()
     overrides = {}
     if args.overrides is not None:
