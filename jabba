@@ -89,7 +89,7 @@ def parse_jobs(cfg, overrides):
                     else:
                         raise Exception(f'Unknown flag_format: {flag_format}.')
 
-            jobs.append(Job(priority, load, cmd, log_path, job_cfg_))
+            jobs.append(Job(priority, load, cmd, log_path, dict(job_cfg_)))
 
     return jobs
 
