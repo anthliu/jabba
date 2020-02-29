@@ -51,13 +51,14 @@ def parse_jobs(cfg, overrides):
                     flag_to_name[flag] = '@' + flag
             reference_queue = list(job_cfg.keys())
             timeout = 100
+            sorted_flags = list(sorted(job_cfg.keys(), key=len, reverse=True))# replace larger vars first (nesting case)
             while len(reference_queue) > 0 and timeout > 0:
                 ref_flag = reference_queue.pop(0)
                 timeout -= 1
                 new_value = old_value = job_cfg[ref_flag]
                 if isinstance(new_value, str):
-                    for flag, value in job_cfg.items():
-                        new_value = new_value.replace(flag_to_name[flag], str(value))
+                    for flag in sorted_flags:
+                        new_value = new_value.replace(flag_to_name[flag], str(job_cfg[flag]))
                     if new_value != old_value:
                         reference_queue.append(ref_flag)
                     job_cfg[ref_flag] = new_value
