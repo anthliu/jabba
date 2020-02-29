@@ -173,6 +173,9 @@ if __name__ == '__main__':
     if args.overrides is not None:
         for override in args.overrides:
             flag, value = override.split('=', 1)
-            overrides[flag] = value
+            try:
+                overrides[flag] = json.loads(value)
+            except json.JSONDecodeError:
+                overrides[flag] = value
 
     asyncio.run(main(args, overrides))
