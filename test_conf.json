@@ -14,13 +14,8 @@
         "arg": "refer-any-var-@load"
     }, {
         "@load": 0.2,
-        "run": "@prefix-low-prior-low-load1"
-    }, {
-        "@load": 0.2,
-        "run": "@prefix-low-prior-low-load2"
-    }, {
-        "@load": 0.2,
-        "run": "@prefix-low-prior-low-load3"
+        "@sweep.number": [0, 1, 2],
+        "run": "@prefix-low-prior-low-load-@number"
     }, {
         "@priority": 3,
         "@load": 1,

@@ -6,6 +6,7 @@ import argparse
 import json
 import itertools
 import collections
+import heapq
 
 Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config_str'])
 
@@ -15,27 +16,6 @@ def dict_product(d):
         dict(zip(keys, result))
         for result in itertools.product(*[d[key] for key in keys])
     )
-
-async def job(**kwargs):
-    gpus = kwargs.pop('gpu', None)
-    cmd = ' '.join(f'{flag}={value}' for flag, value in kwargs.items())
-    cmd = 'python il_test.py hydra.verbose=__main__ ' + cmd
-    if gpus is not None:
-        cmd = 'CUDA_VISIBLE_DEVICES=' + ','.join(str(gpu) for gpu in gpus) + ' ' + cmd
-    cur_time = datetime.now().strftime("%Y-%m-%d (%H:%M:%S)")
-    print(f'[{cur_time}] Running process "{cmd}"')
-    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.STDOUT)
-    result = await proc.wait()
-    cur_time = datetime.now().strftime("%Y-%m-%d (%H:%M:%S)")
-    if result != 0:
-        print(f'[{cur_time}] Process "{cmd}" terminated with ERROR code {result}')
-    else:
-        print(f'[{cur_time}] Process finished "{cmd}"')
-    return result
-
-async def job_sequence(*kwarg_list):
-    for kwarg in kwarg_list:
-        result = await job(**kwarg)
 
 def parse_jobs(cfg, overrides):
     jobs = []
@@ -52,26 +32,36 @@ def parse_jobs(cfg, overrides):
             if flag.startswith('@sweep'):
                 _, sweep_flag = flag.split('.')
                 sweep_flags[sweep_flag] = value
-                job_cfg_.pop(flag)
+        for sweep_flag in sweep_flags.keys():
+            job_cfg_.pop('@sweep.' + sweep_flag)
 
+        # create a job for each sweep value
         for sweep in dict_product(sweep_flags):
             job_cfg_.update(sweep)
             job_cfg = dict(job_cfg_)# save job_cfg_ for later
 
-            # create string formatter
-            name_lookup = {}
+            # deal with references
+            flag_to_name = {}
             for flag, value in job_cfg_.items():
                 if flag[0] == '@':
                     flag_parts = flag[1:].split('.')
-                    name = flag_parts[0]
+                    flag_to_name[flag] = '@' + flag_parts[-1]
                 else:
-                    name = flag
-                name_lookup[name] = value
-            def formatter(value):
-                if isinstance(value, str):
-                    for name, val in name_lookup.items():
-                        value = value.replace('@' + name, str(val))
-                return value
+                    flag_to_name[flag] = '@' + flag
+            reference_queue = list(job_cfg.keys())
+            timeout = 100
+            while len(reference_queue) > 0 and timeout > 0:
+                ref_flag = reference_queue.pop(0)
+                timeout -= 1
+                new_value = old_value = job_cfg[ref_flag]
+                if isinstance(new_value, str):
+                    for flag, value in job_cfg.items():
+                        new_value = new_value.replace(flag_to_name[flag], str(value))
+                    if new_value != old_value:
+                        reference_queue.append(ref_flag)
+                    job_cfg[ref_flag] = new_value
+            if timeout <= 0:
+                raise Exception('Timeout. Reference loading (probably) encountered loop.')
 
             # parse magic commands
             assert '@program' in job_cfg
@@ -85,7 +75,6 @@ def parse_jobs(cfg, overrides):
             log_path = job_cfg.pop('@log_path', datetime.now().strftime('%Y-%m-%d-%H-%M-%S.log'))
 
             for flag, value in job_cfg.items():
-                value = formatter(value)
                 if flag[0] == '@':
                     if flag.startswith('@env'):
                         flag = flag.split('.')[1]
@@ -98,9 +87,57 @@ def parse_jobs(cfg, overrides):
                     else:
                         raise Exception(f'Unknown flag_format: {flag_format}.')
 
-            jobs.append(Job(-priority, load, cmd, log_path, json.dumps(job_cfg_)))
+            jobs.append(Job(priority, load, cmd, log_path, json.dumps(job_cfg_)))
 
     return jobs
+
+class JobQ(object):
+    def __init__(self, jobs=[]):
+        self.cur_load = 0
+        self.max_load = 1
+
+        self.jobs = [((-job.priority, job.load), job) for job in jobs]
+        self.failed_jobs = []
+        heapq.heapify(self.jobs)
+
+        self.load_free_cv = asyncio.Condition()
+
+    def push(self, job):
+        heapq.heappush(self.jobs, ((-job.priority, job.load), job))
+
+    async def run_job(self, job):
+        async with self.load_free_cv:
+            assert self.cur_load <= self.max_load
+
+        start_time = datetime.now()
+        start_time_s = start_time.strftime("%Y-%m-%d (%H:%M:%S)")
+        print(f'[{start_time_s}] Running process "{job.command}"')
+        proc = await asyncio.create_subprocess_shell(job.command, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.STDOUT)
+        result = await proc.wait()
+        end_time = datetime.now()
+        end_time_s = end_time.strftime("%Y-%m-%d (%H:%M:%S)")
+        if result != 0:
+            self.failed_jobs.append(job)
+            print(f'[{end_time_s}] Process "{job.command}" terminated with ERROR code {result}. Finished in {end_time - start_time}')
+        else:
+            print(f'[{end_time_s}] Process finished "{job.command}". Finished in {end_time - start_time}')
+
+        async with self.load_free_cv:
+            self.cur_load -= job.load
+            self.load_free_cv.notify()
+        return result
+
+    async def empty(self):
+        job_tasks = []
+        while len(self.jobs) > 0:
+            _, job = heapq.heappop(self.jobs)
+            async with self.load_free_cv:
+                while self.cur_load + job.load > self.max_load:
+                    await self.load_free_cv.wait()
+
+            self.cur_load += job.load
+            job_tasks.append(asyncio.create_task(self.run_job(job)))
+        return await asyncio.gather(*job_tasks)
 
 async def main(args, overrides):
     jobs = []
@@ -108,21 +145,8 @@ async def main(args, overrides):
         with open(config_path) as f:
             cfg = json.load(f)
         jobs.extend(parse_jobs(cfg, overrides))
-    jobs = sorted(jobs)
-    for job in jobs:
-        print(job)
-    assert False
-
-    tasks = []
-    for i, local_args in enumerate(JOBS):
-        #gpu = GPUS[i % len(GPUS)]
-        gpu = GPUS
-        job_args = dict(GLOBAL_CONFIGS)
-        job_args.update(local_args)
-        #tasks.append(asyncio.create_task(job(gpu=gpu, **job_args)))
-        await job(gpu=gpu, **job_args)
-
-    #return await asyncio.gather(*tasks)
+    jobq = JobQ(jobs)
+    await jobq.empty()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
