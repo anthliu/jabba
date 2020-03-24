@@ -116,8 +116,11 @@ class JobQ(object):
         start_time = datetime.now()
         start_time_s = start_time.strftime("%Y-%m-%d (%H:%M:%S)")
         print(f'[{start_time_s}] Running process "{job.command}"')
-        with open(job.log_path, 'w') as f:
-            proc = await asyncio.create_subprocess_shell(job.command, stdout=f, stderr=asyncio.subprocess.PIPE)
+        if job.log_path != 'stdout':
+            with open(job.log_path, 'w') as f:
+                proc = await asyncio.create_subprocess_shell(job.command, stdout=f, stderr=asyncio.subprocess.PIPE)
+        else:
+            proc = await asyncio.create_subprocess_shell(job.command, stderr=asyncio.subprocess.PIPE)
         result = await proc.wait()
         end_time = datetime.now()
         end_time_s = end_time.strftime("%Y-%m-%d (%H:%M:%S)")
