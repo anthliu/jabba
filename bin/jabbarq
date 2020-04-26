@@ -6,7 +6,7 @@ import json
 from rq import Queue
 from redis import Redis
 
-from jabba_lib import Job, parse_jobs, run_job
+from jabbalib import Job, parse_jobs, run_job
 
 def main(args, overrides):
     jobs = []
