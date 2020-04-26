@@ -18,8 +18,10 @@ def main(args, overrides):
     q = Queue(connection=Redis())
     for job in jobs:
         if args.dry_run:
-            print(f'Test running process "{job.command}"')
-        q.enqueue(run_job, job, dry_run=args.dry_run)
+            print(f'(Dry run) Running process "{job.command}"')
+        else:
+            print(f'Adding process to RQ "{job.command}"')
+        q.enqueue(run_job, job, job_timeout=-1, dry_run=args.dry_run)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
