@@ -3,6 +3,7 @@ from datetime import datetime
 import json
 import itertools
 import collections
+from enum import Enum
 import heapq
 from pathlib import Path
 import subprocess
@@ -11,6 +12,17 @@ import random
 import math
 
 Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config'])
+SampleToken = collections.namedtuple('SampleToken', ['dist', 'a', 'b'])
+
+def token_sample(token):
+    if token.dist == 'uniform':
+        return random.uniform(token.a, token.b)
+    elif token.dist == 'loguniform':
+        low = math.log(token.a)
+        high = math.log(token.b)
+        return math.exp(random.uniform(low, high))
+    else:
+        raise NameError
 
 def dict_product(d):
     keys = d.keys()
@@ -38,13 +50,11 @@ def parse_jobs(cfg, overrides):
                 sweep_flags[sweep_flag] = value
             elif flag.startswith('@uniform'):
                 _, sweep_flag = flag.split('.', 1)
-                samples = [random.uniform(value[0], value[1]) for _ in range(value[2])]
+                samples = [SampleToken('uniform', value[0], value[1]) for _ in range(value[2])]
                 sweep_flags[sweep_flag] = samples
             elif flag.startswith('@loguniform'):
                 _, sweep_flag = flag.split('.', 1)
-                low = math.log(value[0])
-                high = math.log(value[1])
-                samples = [math.exp(random.uniform(low, high)) for _ in range(value[2])]
+                samples = [SampleToken('loguniform', value[0], value[1]) for _ in range(value[2])]
                 sweep_flags[sweep_flag] = samples
             else:
                 remove_flags.pop()
@@ -53,6 +63,9 @@ def parse_jobs(cfg, overrides):
 
         # create a job for each sweep value
         for sweep in dict_product(sweep_flags):
+            for flag in sweep.keys():
+                if isinstance(sweep[flag], SampleToken):
+                    sweep[flag] = token_sample(sweep[flag])
             job_cfg_.update(sweep)
             job_cfg = dict(job_cfg_)# save job_cfg_ for later
 

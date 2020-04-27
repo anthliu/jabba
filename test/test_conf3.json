@@ -1,0 +1,13 @@
+{
+    "@global": {
+        "@log_path": "logs/@run.log",
+        "@format": "=",
+        "@program": "python test_job.py",
+        "@prefix": "SEQUENCE"
+    },
+    "@jobs": [{
+        "@sweep.run": [0, 1, 2],
+        "@uniform.run2": [0, 1, 5],
+        "@loguniform.run3": [1e-4, 1e-10, 5]
+    }]
+}
