@@ -17,6 +17,10 @@
         "@sweep.number": [0, 1, 2],
         "run": "@prefix-low-prior-low-load-@number"
     }, {
+        "@load": 0.2,
+        "@loguniform.number": [1e-5, 1e-3, 5],
+        "run": "@prefix-low-prior-low-load-@number"
+    }, {
         "@sweep.number": ["one", "two"],
         "run": "@prefix-fail-@number"
     }, {

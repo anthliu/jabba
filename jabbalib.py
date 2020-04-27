@@ -7,6 +7,8 @@ import heapq
 from pathlib import Path
 import subprocess
 import asyncio
+import random
+import math
 
 Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config'])
 
@@ -28,12 +30,26 @@ def parse_jobs(cfg, overrides):
 
         # Calculate sweep flags
         sweep_flags = {}
+        remove_flags = []
         for flag, value in job_cfg_.items():
+            remove_flags.append(flag)
             if flag.startswith('@sweep'):
                 _, sweep_flag = flag.split('.', 1)
                 sweep_flags[sweep_flag] = value
-        for sweep_flag in sweep_flags.keys():
-            job_cfg_.pop('@sweep.' + sweep_flag)
+            elif flag.startswith('@uniform'):
+                _, sweep_flag = flag.split('.', 1)
+                samples = [random.uniform(value[0], value[1]) for _ in range(value[2])]
+                sweep_flags[sweep_flag] = samples
+            elif flag.startswith('@loguniform'):
+                _, sweep_flag = flag.split('.', 1)
+                low = math.log(value[0])
+                high = math.log(value[1])
+                samples = [math.exp(random.uniform(low, high)) for _ in range(value[2])]
+                sweep_flags[sweep_flag] = samples
+            else:
+                remove_flags.pop()
+        for sweep_flag in remove_flags:
+            job_cfg_.pop(sweep_flag)
 
         # create a job for each sweep value
         for sweep in dict_product(sweep_flags):
@@ -57,7 +73,15 @@ def parse_jobs(cfg, overrides):
                 new_value = old_value = job_cfg[ref_flag]
                 if isinstance(new_value, str):
                     for flag in sorted_flags:
-                        new_value = new_value.replace(flag_to_name[flag], str(job_cfg[flag]))
+                        replace_val = job_cfg[flag]
+                        if isinstance(replace_val, float):
+                            if 0.01 <= abs(replace_val) < 100:
+                                replace_with = f'{replace_val:.2f}'
+                            else:
+                                replace_with = f'{replace_val:.2e}'
+                        else:
+                            replace_with = str(replace_val)
+                        new_value = new_value.replace(flag_to_name[flag], replace_with)
                     if new_value != old_value:
                         reference_queue.append(ref_flag)
                     job_cfg[ref_flag] = new_value
