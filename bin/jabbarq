@@ -17,11 +17,13 @@ def main(args, overrides):
 
     q = Queue(connection=Redis())
     for job in jobs:
-        if args.dry_run:
+        if args.dry_run or args.dry_run_rq:
             print(f'(Dry run) Running process "{job.command}"')
         else:
             print(f'Adding process to RQ "{job.command}"')
-        q.enqueue(run_job, job, job_timeout=-1, dry_run=args.dry_run)
+        if args.dry_run:
+            continue
+        q.enqueue(run_job, job, job_timeout=-1, dry_run=args.dry_run_rq)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -30,7 +32,8 @@ if __name__ == '__main__':
     )
     parser.add_argument('config_paths', nargs='+', help='Config files to run (json)')
     parser.add_argument('-x', '--overrides', nargs='+', help='Parameters to override from the config')
-    parser.add_argument('--dry_run', action='store_true', help='Run through config without running commands')
+    parser.add_argument('--dry_run', action='store_true', help='Run through config without running commands or queuing into RQ')
+    parser.add_argument('--dry_run_rq', action='store_true', help='Run through config without running commands, queue a dummy process into RQ')
     args = parser.parse_args()
     overrides = {}
     if args.overrides is not None:
