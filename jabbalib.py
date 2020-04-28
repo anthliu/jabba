@@ -11,7 +11,7 @@ import asyncio
 import random
 import math
 
-Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config'])
+Job = collections.namedtuple('Job', ['priority', 'load', 'command', 'log_path', 'config', 'pconfig'])
 SampleToken = collections.namedtuple('SampleToken', ['dist', 'a', 'b'])
 
 def token_sample(token):
@@ -112,6 +112,7 @@ def parse_jobs(cfg, overrides):
             priority = job_cfg.pop('@priority', 0)
             log_path = job_cfg.pop('@log_path', datetime.now().strftime('%Y-%m-%d-%H-%M-%S.log'))
 
+            # format final command
             for flag, value in job_cfg.items():
                 if flag[0] == '@':
                     if flag.startswith('@env'):
@@ -125,7 +126,7 @@ def parse_jobs(cfg, overrides):
                     else:
                         raise Exception(f'Unknown flag_format: {flag_format}.')
 
-            jobs.append(Job(priority, load, cmd, log_path, dict(job_cfg_)))
+            jobs.append(Job(priority, load, cmd, log_path, dict(job_cfg_), dict(job_cfg)))
 
     return jobs
 
