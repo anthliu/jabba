@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import warnings
+from pathlib import Path
+from functools import partial
+from multiprocessing import Pool
+
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+from tabulate import tabulate
+
+from jabbalib import Job, parse_jobs, run_job
+
+def event_file_scalars(event_path, scalar_names):
+    event_path = Path(event_path)
+    result = {}
+    for event_file in event_path.glob('events*'):
+        event_acc = EventAccumulator(str(event_file))
+        event_acc.Reload()
+
+        all_scalars = event_acc.Tags()
+        for scalar in scalar_names:
+            if scalar not in all_scalars['scalars']:
+                warnings.warn(f'Incomplete TB data in "{event_path}" for scalar "{scalar}"')
+                result[scalar] = None
+                continue
+            steps = []
+            values = []
+            for scalar_event in event_acc.Scalars(scalar):
+                steps.append(scalar_event.step)
+                values.append(scalar_event.value)
+
+            if len(steps) > 1:
+                result[scalar] = (np.array(steps), np.array(values))
+            else:
+                result[scalar] = values[0]
+
+    return result
+
+def main(args, overrides):
+    jobs = []
+    for config_path in args.config_paths:
+        with open(config_path) as f:
+            cfg = json.load(f)
+        jobs.extend(parse_jobs(cfg, overrides))
+
+    tb_paths = []
+    for job in jobs:
+        assert '@tb' in job.pconfig, '@tb parameter (tensorboard path) must specified for every job'
+        tb_paths.append(job.pconfig['@tb'])
+
+    if args.dry_run:
+        for path in tb_paths:
+            print(path)
+        return
+
+    with Pool() as p:
+        results = p.map(partial(event_file_scalars, scalar_names=args.scalars), tb_paths)
+
+    table = [
+        [pth] + [result[scalar] for scalar in args.scalars]
+        for pth, result in zip(tb_paths, results)
+    ]
+    print(tabulate(table, ['run'] + args.scalars, showindex='always'))
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='Display tensorboard results for jobs configured in jabba',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser.add_argument('config_paths', nargs='+', help='Config files to run (json)')
+    parser.add_argument('-x', '--overrides', nargs='+', help='Parameters to override from the config')
+    parser.add_argument('-s', '--scalars', nargs='+', help='Scalars to extract from TB')
+    parser.add_argument('--dry_run', action='store_true', help='Run through config without parsing TB')
+    args = parser.parse_args()
+    assert args.scalars is not None, '-s, --scalars (scalars to be extracted from TB) is required'
+    overrides = {}
+    if args.overrides is not None:
+        for override in args.overrides:
+            flag, value = override.split('=', 1)
+            try:
+                overrides[flag] = json.loads(value)
+            except json.JSONDecodeError:
+                overrides[flag] = value
+
+    main(args, overrides)

@@ -6,5 +6,5 @@ setup(
     author='Anthony Liu',
     author_email='anthliu@anthliu.edu',
     py_modules=['jabbalib'],
-    scripts=['bin/jabba','bin/jabbarq'],
+    scripts=['bin/jabba','bin/jabbarq', 'bin/jabbatb']
 )
