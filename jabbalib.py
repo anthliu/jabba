@@ -84,7 +84,7 @@ def parse_jobs(cfg, overrides):
             for flag in job_cfg.keys():
                 special_parts, flag_name = parse_flag(flag)
                 if len(flag_name) == 0:
-                    flag_to_name[flag] = '@' + special_parts[-1]
+                    flag_to_name[flag] = special_parts[-1]
                 else:
                     flag_to_name[flag] = '@' + flag_name
             reference_queue = list(job_cfg.keys())

@@ -2,12 +2,12 @@
     "@global": {
         "@log_path": "logs/@run.log",
         "@format": "flag",
-        "@program": "python test_job.py",
-        "@prefix": "SEQUENCE"
+        "@prefix": "test",
+        "@program": "python test_job.py"
     },
     "@jobs": [{
-        "root_dir": "logs",
-        "gin_file": "test-@run-@module.my_param2.gin",
+        "root_dir": "logs/@prefix-runs",
+        "gin_file": "test-@run-@my_param.gin",
         "@sweep.run": [0, 1, 2],
         "@uniform.@gin.my_param": [0, 1, 2],
         "@loguniform.@gin.module.my_param2": [1e-4, 1e-10, 2]
