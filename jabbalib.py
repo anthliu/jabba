@@ -34,6 +34,9 @@ def dict_product(d):
 def parse_jobs(cfg, overrides):
     jobs = []
     global_cfg = cfg.get('@global', {})
+    seed = global_cfg.get('@seed', 0)
+    seed = overrides.get('@seed', seed)
+    random.seed(seed)
 
     for local_cfg in cfg['@jobs']:
         job_cfg_ = dict(global_cfg)
@@ -108,9 +111,10 @@ def parse_jobs(cfg, overrides):
                 flag_format = job_cfg.pop('@format')
             else:
                 flag_format = 'flag'
-            load = job_cfg.pop('@load', 1)
-            priority = job_cfg.pop('@priority', 0)
-            log_path = job_cfg.pop('@log_path', datetime.now().strftime('%Y-%m-%d-%H-%M-%S.log'))
+
+            load = job_cfg.get('@load', 1)
+            priority = job_cfg.get('@priority', 0)
+            log_path = job_cfg.get('@log_path', datetime.now().strftime('%Y-%m-%d-%H-%M-%S.log'))
 
             # format final command
             for flag, value in job_cfg.items():
