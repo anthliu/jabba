@@ -116,8 +116,11 @@ def parse_jobs(cfg, overrides):
             for flag, value in job_cfg.items():
                 if flag[0] == '@':
                     if flag.startswith('@env'):
-                        flag = flag.split('.', 1)[1]
+                        flag = flag.rsplit('.', 1)[1]
                         cmd = f'{flag}={value} {cmd}'
+                    if flag.startswith('@gin'):
+                        flag = flag.rsplit('.', 1)[1]
+                        cmd += f" --gin_param='{flag} = {value}'"
                 else:
                     if flag_format == 'flag':
                         cmd += f' --{flag} {value}'
