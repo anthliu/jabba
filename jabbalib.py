@@ -57,13 +57,20 @@ def parse_jobs(cfg, overrides):
         remove_flags = []
         for flag, value in job_cfg_.items():
             remove_flags.append(flag)
-            special_parts, sweep_flag = parse_flag(flag)
+            special_parts, flag_name = parse_flag(flag)
+            sweep_parts = special_parts + [flag_name]
             if '@sweep' in special_parts:
+                sweep_parts.remove('@sweep')
+                sweep_flag = '.'.join(sweep_parts)
                 sweep_flags[sweep_flag] = value
             elif '@uniform' in special_parts:
+                sweep_parts.remove('@uniform')
+                sweep_flag = '.'.join(sweep_parts)
                 samples = [SampleToken('uniform', value[0], value[1]) for _ in range(value[2])]
                 sweep_flags[sweep_flag] = samples
             elif '@loguniform' in special_parts:
+                sweep_parts.remove('@loguniform')
+                sweep_flag = '.'.join(sweep_parts)
                 samples = [SampleToken('loguniform', value[0], value[1]) for _ in range(value[2])]
                 sweep_flags[sweep_flag] = samples
             else:
@@ -129,7 +136,10 @@ def parse_jobs(cfg, overrides):
                 if '@env' in special_parts:
                     cmd = f'{flag_name}={value} {cmd}'
                 elif '@gin' in special_parts:
-                    cmd += f" --gin_param='{flag_name} = {value}'"
+                    if isinstance(value, str):
+                        cmd += f" --gin_param='{flag_name} = \"{value}\"'"
+                    else:
+                        cmd += f" --gin_param='{flag_name} = {value}'"
                 elif len(flag_name) == 0:
                     pass
                 elif flag_format == 'flag':
