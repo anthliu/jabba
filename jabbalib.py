@@ -98,7 +98,7 @@ def parse_jobs(cfg, overrides):
                     for flag in sorted_flags:
                         replace_val = job_cfg[flag]
                         if isinstance(replace_val, float):
-                            if 0.01 <= abs(replace_val) < 100:
+                            if 0.01 <= abs(replace_val) < 100 or replace_val == 0.0:
                                 replace_with = f'{replace_val:.2f}'
                             else:
                                 replace_with = f'{replace_val:.2e}'
