@@ -31,6 +31,15 @@ def dict_product(d):
         for result in itertools.product(*[d[key] for key in keys])
     )
 
+def parse_flag(flag):
+    parts = flag.split('.')
+    start_index = 0
+    while start_index < len(parts):
+        if not parts[start_index].startswith('@'):
+            break
+        start_index += 1
+    return parts[:start_index], '.'.join(parts[start_index:])
+
 def parse_jobs(cfg, overrides):
     jobs = []
     global_cfg = cfg.get('@global', {})
@@ -48,15 +57,13 @@ def parse_jobs(cfg, overrides):
         remove_flags = []
         for flag, value in job_cfg_.items():
             remove_flags.append(flag)
-            if flag.startswith('@sweep'):
-                _, sweep_flag = flag.split('.', 1)
+            special_parts, sweep_flag = parse_flag(flag)
+            if '@sweep' in special_parts:
                 sweep_flags[sweep_flag] = value
-            elif flag.startswith('@uniform'):
-                _, sweep_flag = flag.split('.', 1)
+            elif '@uniform' in special_parts:
                 samples = [SampleToken('uniform', value[0], value[1]) for _ in range(value[2])]
                 sweep_flags[sweep_flag] = samples
-            elif flag.startswith('@loguniform'):
-                _, sweep_flag = flag.split('.', 1)
+            elif '@loguniform' in special_parts:
                 samples = [SampleToken('loguniform', value[0], value[1]) for _ in range(value[2])]
                 sweep_flags[sweep_flag] = samples
             else:
@@ -74,12 +81,12 @@ def parse_jobs(cfg, overrides):
 
             # deal with references
             flag_to_name = {}
-            for flag, value in job_cfg_.items():
-                if flag[0] == '@':
-                    flag_parts = flag[1:].split('.')
-                    flag_to_name[flag] = '@' + flag_parts[-1]
+            for flag in job_cfg.keys():
+                special_parts, flag_name = parse_flag(flag)
+                if len(flag_name) == 0:
+                    flag_to_name[flag] = '@' + special_parts[-1]
                 else:
-                    flag_to_name[flag] = '@' + flag
+                    flag_to_name[flag] = '@' + flag_name
             reference_queue = list(job_cfg.keys())
             timeout = 100
             sorted_flags = list(sorted(job_cfg.keys(), key=len, reverse=True))# replace larger vars first (nesting case)
@@ -118,20 +125,19 @@ def parse_jobs(cfg, overrides):
 
             # format final command
             for flag, value in job_cfg.items():
-                if flag[0] == '@':
-                    if flag.startswith('@env'):
-                        flag = flag.rsplit('.', 1)[1]
-                        cmd = f'{flag}={value} {cmd}'
-                    if flag.startswith('@gin'):
-                        flag = flag.rsplit('.', 1)[1]
-                        cmd += f" --gin_param='{flag} = {value}'"
+                special_parts, flag_name = parse_flag(flag)
+                if '@env' in special_parts:
+                    cmd = f'{flag_name}={value} {cmd}'
+                elif '@gin' in special_parts:
+                    cmd += f" --gin_param='{flag_name} = {value}'"
+                elif len(flag_name) == 0:
+                    pass
+                elif flag_format == 'flag':
+                    cmd += f' --{flag_name} {value}'
+                elif flag_format == '=':
+                    cmd += f' {flag_name}={value}'
                 else:
-                    if flag_format == 'flag':
-                        cmd += f' --{flag} {value}'
-                    elif flag_format == '=':
-                        cmd += f' {flag}={value}'
-                    else:
-                        raise Exception(f'Unknown flag_format: {flag_format}.')
+                    raise Exception(f'Unknown flag_format: {flag_format}.')
 
             jobs.append(Job(priority, load, cmd, log_path, dict(job_cfg_), dict(job_cfg)))
 
