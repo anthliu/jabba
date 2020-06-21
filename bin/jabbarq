@@ -9,13 +9,11 @@ from redis import Redis
 from jabbalib import Job, parse_jobs, run_job
 
 def main(args, overrides):
-    jobs = []
-    for config_path in args.config_paths:
-        with open(config_path) as f:
-            cfg = json.load(f)
-        jobs.extend(parse_jobs(cfg, overrides))
+    with open(args.config_path) as f:
+        cfg = json.load(f)
+    jobs = parse_jobs(cfg, overrides)
 
-    q = Queue(connection=Redis(host=args.url, port=args.port, db=args.database, password=args.password))
+    q = Queue(args.queue, connection=Redis(host=args.url, port=args.port, db=args.database, password=args.password))
     for job in jobs:
         if args.dry_run or args.dry_run_rq:
             print(f'(Dry run) Running process "{job.command}"')
@@ -30,7 +28,8 @@ if __name__ == '__main__':
         description='Run jobs in sequence and in parallel',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    parser.add_argument('config_paths', nargs='+', help='Config files to run (json)')
+    parser.add_argument('config_path', help='Config file to run (json)')
+    parser.add_argument('queue', type=str, nargs='?', help='Queue to push jobs to')
     parser.add_argument('-x', '--overrides', nargs='+', help='Parameters to override from the config')
     parser.add_argument('--dry_run', action='store_true', help='Run through config without running commands or queuing into RQ')
     parser.add_argument('--dry_run_rq', action='store_true', help='Run through config without running commands, queue a dummy process into RQ')
@@ -39,6 +38,10 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--port', type=int, default=6379)
     parser.add_argument('-db', '--database', type=int, default=0)
     args = parser.parse_args()
+
+    if args.queue is None:
+        args.queue = 'default'
+
     overrides = {}
     if args.overrides is not None:
         for override in args.overrides:
